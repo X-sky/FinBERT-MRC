@@ -13,27 +13,25 @@ logger = logging.getLogger(__name__)
 
 
 def save_model(opt, model, global_step):
-    output_dir = os.path.join(opt.output_dir, 'checkpoint-{}'.format(global_step))
+    output_dir = os.path.join(opt.output_dir, "checkpoint-{}".format(global_step))
     if not os.path.exists(output_dir):
         os.makedirs(output_dir, exist_ok=True)
 
     # take care of model distributed / parallel training
-    model_to_save = (
-        model.module if hasattr(model, "module") else model
-    )
-    logger.info(f'Saving model & optimizer & scheduler checkpoint to {output_dir}')
+    model_to_save = model.module if hasattr(model, "module") else model
+    logger.info(f"Saving model & optimizer & scheduler checkpoint to {output_dir}")
     if torch.__version__ == "1.10.1+cu102":
-        torch.save(model_to_save.state_dict(), os.path.join(output_dir, 'model.pt'))
+        torch.save(model_to_save.state_dict(), os.path.join(output_dir, "model.pt"))
     else:
-        torch.save(model_to_save.state_dict(),
-                   os.path.join(output_dir, 'model.pt'),
-                   _use_new_zipfile_serialization=False)
+        torch.save(
+            model_to_save.state_dict(),
+            os.path.join(output_dir, "model.pt"),
+            _use_new_zipfile_serialization=False,
+        )
 
 
 def build_optimizer_and_scheduler(opt, model, t_total):
-    module = (
-        model.module if hasattr(model, "module") else model
-    )
+    module = model.module if hasattr(model, "module") else model
 
     # 差分学习率
     no_decay = ["bias", "LayerNorm.weight"]
@@ -43,29 +41,54 @@ def build_optimizer_and_scheduler(opt, model, t_total):
     other_param_optimizer = []
 
     for name, para in model_param:
-        space = name.split('.')
-        if space[0] == 'bert_module':
+        space = name.split(".")
+        if space[0] == "bert_module":
             bert_param_optimizer.append((name, para))
         else:
             other_param_optimizer.append((name, para))
 
     optimizer_grouped_parameters = [
         # bert other module
-        {"params": [p for n, p in bert_param_optimizer if not any(nd in n for nd in no_decay)],
-         "weight_decay": opt.weight_decay, 'lr': opt.lr},
-        {"params": [p for n, p in bert_param_optimizer if any(nd in n for nd in no_decay)],
-         "weight_decay": 0.0, 'lr': opt.lr},
-
+        {
+            "params": [
+                p
+                for n, p in bert_param_optimizer
+                if not any(nd in n for nd in no_decay)
+            ],
+            "weight_decay": opt.weight_decay,
+            "lr": opt.lr,
+        },
+        {
+            "params": [
+                p for n, p in bert_param_optimizer if any(nd in n for nd in no_decay)
+            ],
+            "weight_decay": 0.0,
+            "lr": opt.lr,
+        },
         # 其他模块，差分学习率
-        {"params": [p for n, p in other_param_optimizer if not any(nd in n for nd in no_decay)],
-         "weight_decay": opt.weight_decay, 'lr': opt.other_lr},
-        {"params": [p for n, p in other_param_optimizer if any(nd in n for nd in no_decay)],
-         "weight_decay": 0.0, 'lr': opt.other_lr},
+        {
+            "params": [
+                p
+                for n, p in other_param_optimizer
+                if not any(nd in n for nd in no_decay)
+            ],
+            "weight_decay": opt.weight_decay,
+            "lr": opt.other_lr,
+        },
+        {
+            "params": [
+                p for n, p in other_param_optimizer if any(nd in n for nd in no_decay)
+            ],
+            "weight_decay": 0.0,
+            "lr": opt.other_lr,
+        },
     ]
 
     optimizer = AdamW(optimizer_grouped_parameters, lr=opt.lr, eps=opt.adam_epsilon)
     scheduler = get_linear_schedule_with_warmup(
-        optimizer, num_warmup_steps=int(opt.warmup_proportion * t_total), num_training_steps=t_total
+        optimizer,
+        num_warmup_steps=int(opt.warmup_proportion * t_total),
+        num_training_steps=t_total,
     )
 
     return optimizer, scheduler
@@ -73,12 +96,18 @@ def build_optimizer_and_scheduler(opt, model, t_total):
 
 def train(opt, model, train_dataset):
     swa_raw_model = copy.deepcopy(model)
-    train_sampler = RandomSampler(train_dataset) if opt.local_rank == -1 else DistributedSampler(train_dataset)
-    train_loader = DataLoader(dataset=train_dataset,
-                              batch_size=opt.train_batch_size,
-                              sampler=train_sampler,
-                              num_workers=0,
-                              pin_memory=True)
+    train_sampler = (
+        RandomSampler(train_dataset)
+        if opt.local_rank == -1
+        else DistributedSampler(train_dataset)
+    )
+    train_loader = DataLoader(
+        dataset=train_dataset,
+        batch_size=opt.train_batch_size,
+        sampler=train_sampler,
+        num_workers=0,
+        pin_memory=True,
+    )
 
     scaler = None
     if opt.use_fp16:
@@ -105,9 +134,9 @@ def train(opt, model, train_dataset):
     model.zero_grad()
     fgm, pgd = None, None
     attack_train_mode = opt.attack_train.lower()
-    if attack_train_mode == 'fgm':
+    if attack_train_mode == "fgm":
         fgm = FGM(model=model)
-    elif attack_train_mode == 'pgd':
+    elif attack_train_mode == "pgd":
         pgd = PGD(model=model)
 
     pgd_k = 3
@@ -115,10 +144,10 @@ def train(opt, model, train_dataset):
     save_steps = t_total // opt.train_epochs
     eval_steps = save_steps
 
-    logger.info(f'Save model in {save_steps} steps; Eval model in {eval_steps} steps')
+    logger.info(f"Save model in {save_steps} steps; Eval model in {eval_steps} steps")
 
     log_loss_steps = 200
-    avg_loss = 0.
+    avg_loss = 0.0
 
     for epoch in range(opt.train_epochs):
         train_sampler.set_epoch(epoch)
@@ -204,9 +233,11 @@ def train(opt, model, train_dataset):
 
             if global_step % log_loss_steps == 0:
                 avg_loss /= log_loss_steps
-                logger.info('From rank%d Step: %d / %d ----> average loss: %.5f' % (opt.local_rank,
-                                                                                    global_step, t_total, avg_loss))
-                avg_loss = 0.
+                logger.info(
+                    "From rank%d Step: %d / %d ----> average loss: %.5f"
+                    % (opt.local_rank, global_step, t_total, avg_loss)
+                )
+                avg_loss = 0.0
             else:
                 avg_loss += loss.item()
 
@@ -218,4 +249,4 @@ def train(opt, model, train_dataset):
 
     # clear cuda cache to avoid OOM
     torch.cuda.empty_cache()
-    logger.info('Training done')
+    logger.info("Training done")

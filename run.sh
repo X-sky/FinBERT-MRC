@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-export MID_DATA_DIR="./data/ChiFinAnn/fold5/MRC/mid_data"
-export RAW_DATA_DIR="./data/ChiFinAnn/fold5/MRC/raw_data"
+export MID_DATA_DIR="./data/mid_data"
+export RAW_DATA_DIR="./data/raw_data"
 export OUTPUT_DIR="./out"
 
-export GPU_IDS="0,1"
+# adjusting args because of single GPU
+export GPU_IDS="0"
+export LOCAL_RANK="0"
 export BERT_TYPE="finbert"  # finbert/bert_base/bert_wwm
 
 if [ "$BERT_TYPE"x = "bert_wwm"x ];then
@@ -11,10 +13,11 @@ if [ "$BERT_TYPE"x = "bert_wwm"x ];then
 else if [ "$BERT_TYPE"x = "bert_base"x ];then
   export BERT_DIR="./bert-base-chinese/"
 else
-  export BERT_DIR="./FinBERT/"
+  export BERT_DIR="./baseline/FinBERT/"
 fi
 
-python -m torch.distributed.launch --nproc_per_node=2 main.py \
+python -m torch.distributed.run --nproc_per_node=1 main.py \
+--local_rank=$LOCAL_RANK \
 --gpu_ids=$GPU_IDS \
 --output_dir=$OUTPUT_DIR \
 --mid_data_dir=$MID_DATA_DIR \

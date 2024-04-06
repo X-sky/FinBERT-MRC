@@ -9,7 +9,7 @@ from preprocess.processor import ENTITY_TYPES
 
 
 class LabelSmoothingCrossEntropy(nn.Module):
-    def __init__(self, eps=0.1, reduction='mean', ignore_index=-100):
+    def __init__(self, eps=0.1, reduction="mean", ignore_index=-100):
         super(LabelSmoothingCrossEntropy, self).__init__()
         self.eps = eps
         self.reduction = reduction
@@ -18,22 +18,22 @@ class LabelSmoothingCrossEntropy(nn.Module):
     def forward(self, output, target):
         c = output.size()[-1]
         log_pred = torch.log_softmax(output, dim=-1)
-        if self.reduction == 'sum':
+        if self.reduction == "sum":
             loss = -log_pred.sum()
         else:
             loss = -log_pred.sum(dim=-1)
-            if self.reduction == 'mean':
+            if self.reduction == "mean":
                 loss = loss.mean()
 
-        return loss * self.eps / c + (1 - self.eps) * \
-               torch.nn.functional.nll_loss(log_pred, target,
-                                            reduction=self.reduction,
-                                            ignore_index=self.ignore_index)
+        return loss * self.eps / c + (1 - self.eps) * torch.nn.functional.nll_loss(
+            log_pred, target, reduction=self.reduction, ignore_index=self.ignore_index
+        )
 
 
 class FocalLoss(nn.Module):
     """Multi-class Focal loss implementation"""
-    def __init__(self, gamma=2, weight=None, reduction='mean', ignore_index=-100):
+
+    def __init__(self, gamma=2, weight=None, reduction="mean", ignore_index=-100):
         super(FocalLoss, self).__init__()
         self.gamma = gamma
         self.weight = weight
@@ -48,7 +48,13 @@ class FocalLoss(nn.Module):
         log_pt = torch.log_softmax(inputs, dim=1)
         pt = torch.exp(log_pt)
         log_pt = (1 - pt) ** self.gamma * log_pt
-        loss = torch.nn.functional.nll_loss(log_pt, target, self.weight, reduction=self.reduction, ignore_index=self.ignore_index)
+        loss = torch.nn.functional.nll_loss(
+            log_pt,
+            target,
+            self.weight,
+            reduction=self.reduction,
+            ignore_index=self.ignore_index,
+        )
         return loss
 
 
@@ -56,13 +62,16 @@ class SpatialDropout(nn.Module):
     """
     对字级别的向量进行丢弃
     """
+
     def __init__(self, drop_prob):
         super(SpatialDropout, self).__init__()
         self.drop_prob = drop_prob
 
     @staticmethod
     def _make_noise(input):
-        return input.new().resize_(input.size(0), *repeat(1, input.dim() - 2), input.size(2))
+        return input.new().resize_(
+            input.size(0), *repeat(1, input.dim() - 2), input.size(2)
+        )
 
     def forward(self, inputs):
         output = inputs.clone()
@@ -80,10 +89,7 @@ class SpatialDropout(nn.Module):
 
 
 class ConditionalLayerNorm(nn.Module):
-    def __init__(self,
-                 normalized_shape,
-                 cond_shape,
-                 eps=1e-12):
+    def __init__(self, normalized_shape, cond_shape, eps=1e-12):
         super().__init__()
 
         self.eps = eps
@@ -103,7 +109,9 @@ class ConditionalLayerNorm(nn.Module):
         nn.init.zeros_(self.bias_dense.weight)
 
     def forward(self, inputs, cond=None):
-        assert cond is not None, 'Conditional tensor need to input when use conditional layer norm'
+        assert (
+            cond is not None
+        ), "Conditional tensor need to input when use conditional layer norm"
         cond = torch.unsqueeze(cond, 1)  # (b, 1, h*2)
 
         weight = self.weight_dense(cond) + self.weight  # (b, 1, h)
@@ -112,7 +120,7 @@ class ConditionalLayerNorm(nn.Module):
         mean = torch.mean(inputs, dim=-1, keepdim=True)  # （b, s, 1）
         outputs = inputs - mean  # (b, s, h)
 
-        variance = torch.mean(outputs ** 2, dim=-1, keepdim=True)
+        variance = torch.mean(outputs**2, dim=-1, keepdim=True)
         std = torch.sqrt(variance + self.eps)  # (b, s, 1)
 
         outputs = outputs / std  # (b, s, h)
@@ -122,18 +130,17 @@ class ConditionalLayerNorm(nn.Module):
 
 
 class BaseModel(nn.Module):
-    def __init__(self,
-                 bert_dir,
-                 dropout_prob):
+    def __init__(self, bert_dir, dropout_prob):
         super(BaseModel, self).__init__()
-        config_path = os.path.join(bert_dir, 'config.json')
+        config_path = os.path.join(bert_dir, "config.json")
 
-        assert os.path.exists(bert_dir) and os.path.exists(config_path), \
-            'pretrained bert file does not exist'
+        assert os.path.exists(bert_dir) and os.path.exists(
+            config_path
+        ), "pretrained bert file does not exist"
 
-        self.bert_module = BertModel.from_pretrained(bert_dir,
-                                                     output_hidden_states=True,
-                                                     hidden_dropout_prob=dropout_prob)
+        self.bert_module = BertModel.from_pretrained(
+            bert_dir, output_hidden_states=True, hidden_dropout_prob=dropout_prob
+        )
         self.bert_config = self.bert_module.config
 
     @staticmethod
@@ -147,18 +154,16 @@ class BaseModel(nn.Module):
                     if module.bias is not None:
                         nn.init.zeros_(module.bias)
                 elif isinstance(module, nn.Embedding):
-                    nn.init.normal_(module.weight, mean=0, std=kwargs.pop('initializer_range', 0.02))
+                    nn.init.normal_(
+                        module.weight, mean=0, std=kwargs.pop("initializer_range", 0.02)
+                    )
                 elif isinstance(module, nn.LayerNorm):
                     nn.init.ones_(module.weight)
                     nn.init.zeros_(module.bias)
 
 
 class MRCModel(BaseModel):
-    def __init__(self,
-                 bert_dir,
-                 dropout_prob=0.1,
-                 loss_type='ce',
-                 **kwargs):
+    def __init__(self, bert_dir, dropout_prob=0.1, loss_type="ce", **kwargs):
         """
         tag the subject and object corresponding to the predicate
         :param use_type_embed: type embedding for the sentence
@@ -167,20 +172,18 @@ class MRCModel(BaseModel):
         super(MRCModel, self).__init__(bert_dir, dropout_prob=dropout_prob)
         self.use_smooth = loss_type
         out_dims = self.bert_config.hidden_size
-        mid_linear_dims = kwargs.pop('mid_linear_dims', 128)
+        mid_linear_dims = kwargs.pop("mid_linear_dims", 128)
         self.mid_linear = nn.Sequential(
-            nn.Linear(out_dims, mid_linear_dims),
-            nn.ReLU(),
-            nn.Dropout(dropout_prob)
+            nn.Linear(out_dims, mid_linear_dims), nn.ReLU(), nn.Dropout(dropout_prob)
         )
         out_dims = mid_linear_dims
         self.start_fc = nn.Linear(out_dims, 2)
         self.end_fc = nn.Linear(out_dims, 2)
 
-        reduction = 'none'
-        if loss_type == 'ce':
+        reduction = "none"
+        if loss_type == "ce":
             self.criterion = nn.CrossEntropyLoss(reduction=reduction)
-        elif loss_type == 'ls_ce':
+        elif loss_type == "ls_ce":
             self.criterion = LabelSmoothingCrossEntropy(reduction=reduction)
         else:
             self.criterion = FocalLoss(reduction=reduction)
@@ -190,25 +193,30 @@ class MRCModel(BaseModel):
         init_blocks = [self.mid_linear, self.start_fc, self.end_fc]
         self._init_weights(init_blocks)
 
-    def forward(self,
-                token_ids,
-                attention_masks,
-                token_type_ids,
-                ent_type=None,
-                start_ids=None,
-                end_ids=None,
-                pseudo=None):
+    def forward(
+        self,
+        token_ids,
+        attention_masks,
+        token_type_ids,
+        ent_type=None,
+        start_ids=None,
+        end_ids=None,
+        pseudo=None,
+    ):
         bert_outputs = self.bert_module(
             input_ids=token_ids,
             attention_mask=attention_masks,
-            token_type_ids=token_type_ids
+            token_type_ids=token_type_ids,
         )
 
         seq_out = bert_outputs[0]
         seq_out = self.mid_linear(seq_out)
         start_logits = self.start_fc(seq_out)
         end_logits = self.end_fc(seq_out)
-        out = (start_logits, end_logits, )
+        out = (
+            start_logits,
+            end_logits,
+        )
 
         if start_ids is not None and end_ids is not None:
             start_logits = start_logits.view(-1, 2)
@@ -224,8 +232,16 @@ class MRCModel(BaseModel):
 
             if pseudo is not None:
                 # (batch,)
-                start_loss = self.criterion(start_logits, start_ids.view(-1)).view(-1, 512).mean(dim=-1)
-                end_loss = self.criterion(end_logits, end_ids.view(-1)).view(-1, 512).mean(dim=-1)
+                start_loss = (
+                    self.criterion(start_logits, start_ids.view(-1))
+                    .view(-1, 512)
+                    .mean(dim=-1)
+                )
+                end_loss = (
+                    self.criterion(end_logits, end_ids.view(-1))
+                    .view(-1, 512)
+                    .mean(dim=-1)
+                )
 
                 # nums of pseudo data
                 pseudo_nums = pseudo.sum().item()
@@ -238,25 +254,33 @@ class MRCModel(BaseModel):
                     end_loss = end_loss.mean()
                 else:
                     if total_nums == pseudo_nums:
-                        start_loss = (rate*pseudo*start_loss).sum() / pseudo_nums
-                        end_loss = (rate*pseudo*end_loss).sum() / pseudo_nums
+                        start_loss = (rate * pseudo * start_loss).sum() / pseudo_nums
+                        end_loss = (rate * pseudo * end_loss).sum() / pseudo_nums
                     else:
-                        start_loss = (rate*pseudo*start_loss).sum() / pseudo_nums \
-                                     + ((1 - rate) * (1 - pseudo) * start_loss).sum() / (total_nums - pseudo_nums)
-                        end_loss = (rate*pseudo*end_loss).sum() / pseudo_nums \
-                                     + ((1 - rate) * (1 - pseudo) * end_loss).sum() / (total_nums - pseudo_nums)
+                        start_loss = (
+                            rate * pseudo * start_loss
+                        ).sum() / pseudo_nums + (
+                            (1 - rate) * (1 - pseudo) * start_loss
+                        ).sum() / (
+                            total_nums - pseudo_nums
+                        )
+                        end_loss = (rate * pseudo * end_loss).sum() / pseudo_nums + (
+                            (1 - rate) * (1 - pseudo) * end_loss
+                        ).sum() / (total_nums - pseudo_nums)
             else:
                 start_loss = self.criterion(active_start_logits, active_start_labels)
                 end_loss = self.criterion(active_end_logits, active_end_labels)
 
             loss = start_loss + end_loss
-            out = (loss, ) + out
+            out = (loss,) + out
 
         return out
 
 
 def build_model(bert_dir, **kwargs):
-    model = MRCModel(bert_dir=bert_dir,
-                     dropout_prob=kwargs.pop('dropout_prob', 0.1),
-                     loss_type=kwargs.pop('loss_type', 'ce'))
+    model = MRCModel(
+        bert_dir=bert_dir,
+        dropout_prob=kwargs.pop("dropout_prob", 0.1),
+        loss_type=kwargs.pop("loss_type", "ce"),
+    )
     return model
