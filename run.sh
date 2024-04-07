@@ -6,14 +6,14 @@ export OUTPUT_DIR="./out"
 # adjusting args because of single GPU
 export GPU_IDS="0"
 export LOCAL_RANK="0"
-export BERT_TYPE="finbert"  # finbert/bert_base/bert_wwm
+export BERT_TYPE="roberta"  # default fin_bert pre-trained model
 
-if [ "$BERT_TYPE"x = "bert_wwm"x ];then
-  export BERT_DIR="./bert_wwm/"
-else if [ "$BERT_TYPE"x = "bert_base"x ];then
-  export BERT_DIR="./bert-base-chinese/"
+if [ "$BERT_TYPE"x = "bert"x ];then
+  export BERT_DIR="./baselines/chinese_bert_wwm_ext/"
+else if [ "$BERT_TYPE"x = "roberta"x ];then
+  export BERT_DIR="./baselines/chinese_roberta_wwm_ext/"
 else
-  export BERT_DIR="./baseline/FinBERT/"
+  export BERT_DIR="./baselines/fin_bert/"
 fi
 
 python -m torch.distributed.run --nproc_per_node=1 main.py \

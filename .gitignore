@@ -11,6 +11,7 @@ __pycache__/
 build/
 develop-eggs/
 dist/
+out/
 downloads/
 eggs/
 .eggs/
@@ -130,3 +131,4 @@ dmypy.json
 
 temp/
 __pycache__/
+pytorch_model.bin
